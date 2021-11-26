@@ -1,0 +1,23 @@
+{
+  "name": "finite-state-machine",
+  "version": "1.0.0",
+  "description": "A Finite State Machine creator and executor",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "parcel src/index.html"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ruben4447/ts-finiteStateMachine.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ruben4447/ts-finiteStateMachine/issues"
+  },
+  "homepage": "https://github.com/ruben4447/ts-finiteStateMachine#readme",
+  "devDependencies": {
+    "parcel": "^2.0.1"
+  }
+}
