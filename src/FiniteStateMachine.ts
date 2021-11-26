@@ -3,6 +3,8 @@ export const ROLE_START = 1;
 export const ROLE_ACCEPT = 2;
 export type Role = typeof ROLE_NONE | typeof ROLE_START | typeof ROLE_ACCEPT;
 
+export const VALID_LABEL_REGEX = /[A-Za-z$0-9_]/;
+
 /**
  * Each state must have a unique label.
  * input[] must be same size as conns[]. If input[i] is encountered, next state is conns[i].
@@ -59,6 +61,13 @@ export class FiniteStateMachine {
     if (state.role === undefined) state.role = ROLE_NONE;
     this._states.set(state.label, state);
     return true;
+  }
+
+  /** Add state this this FSM from a string */
+  public addStateFromString(string: string) {
+    const state = FiniteStateMachine.stateFromString(string);
+    if (typeof state === 'object') return this.addState(state);
+    return false;
   }
 
   /** Get label of starting state in FSM */
@@ -207,7 +216,7 @@ export class FiniteStateMachine {
     }
     let label = '';
     while (/\s/.test(string[pos])) pos++; // Remove whitespace
-    while (/[A-Za-z$0-9_]/.test(string[pos])) label += string[pos++];
+    while (VALID_LABEL_REGEX.test(string[pos])) label += string[pos++];
     if (label.length === 0) return pos; // No label
     while (/\s/.test(string[pos])) pos++; // Remove whitespace
     if (string.substr(pos, 2) !== '::') return pos;
@@ -217,7 +226,7 @@ export class FiniteStateMachine {
     while (pos < string.length) {
       let label = '';
       while (/\s/.test(string[pos])) pos++; // Remove whitespace
-      while (/[A-Za-z$0-9_]/.test(string[pos])) label += string[pos++];
+      while (VALID_LABEL_REGEX.test(string[pos])) label += string[pos++];
       if (label.length === 0) return pos; // No label
       while (/\s/.test(string[pos])) pos++; // Remove whitespace
       if (string[pos] !== ':') return pos;
