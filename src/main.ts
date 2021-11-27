@@ -20,6 +20,7 @@ var doUpdate = false;
 var inputContainer: HTMLSpanElement;
 var fsmInput = '', fsmInputIndex = -1, fsmRunning = false, traceHistory = false;
 var execContainer: HTMLDivElement;
+var textarea: HTMLTextArea;
 
 function main() {
   canvas = document.createElement('canvas');
@@ -79,6 +80,9 @@ function main() {
   execContainer = document.createElement("div");
   document.body.appendChild(execContainer);
   exechtml_start();
+
+  textarea = document.createElement("textarea");
+  document.body.appendChild(textarea);
 
   doUpdate = true;
   mainLoop();
@@ -398,7 +402,7 @@ function FSMtoString() {
       s_paths += label + "->" + state.conns[i] + ":" + paths.get(label + '-' + state.conns[i]) + "\n";
     }
   }
-  return s_states + SEC_SEP_TXT + s_paths;
+  return s_states + SEC_SEP_TXT + s_paths + SEC_SEP_TXT + textarea.value;
 }
 
 // Create FSM from a string
@@ -406,6 +410,7 @@ function FSMfromString(string: string) {
   const data = parseFSMString(string);
   states = data.states;
   paths = data.paths;
+  textarea.value = data.text;
   fixPaths();
   activePath = undefined;
   selectedState = undefined;
@@ -453,7 +458,8 @@ function parseFSMString(string: string) {
       paths.set(pstr, coords);
     }
   });
-  return { states, paths };
+  const text = strings.slice(2).join(SEC_SEP_TXT);
+  return { states, paths, text };
 }
 
 /** Fix connection in paths */
