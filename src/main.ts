@@ -20,7 +20,7 @@ var doUpdate = false;
 var inputContainer: HTMLSpanElement;
 var fsmInput = '', fsmInputIndex = -1, fsmRunning = false, traceHistory = false;
 var execContainer: HTMLDivElement;
-var textarea: HTMLTextArea;
+var textarea: HTMLTextAreaElement;
 
 function main() {
   canvas = document.createElement('canvas');
@@ -31,6 +31,19 @@ function main() {
 
   registerEvents();
 
+  let inputDiv = document.createElement("div");
+  document.body.appendChild(inputDiv);
+  inputDiv.insertAdjacentHTML("beforeend", "FSM Input: ");
+  inputContainer = document.createElement("span");
+  inputContainer.classList.add('fsm-input-container');
+  inputDiv.appendChild(inputContainer);
+  if (fsmInput.length === 0) inputContainer_input(); else inputContainer_text();
+
+  execContainer = document.createElement("div");
+  document.body.appendChild(execContainer);
+  exechtml_start();
+
+  document.body.insertAdjacentHTML("beforeend", "<br>");
   pathTable = document.createElement("table");
   document.body.appendChild(pathTable);
 
@@ -69,18 +82,6 @@ function main() {
   });
 
   document.body.insertAdjacentHTML("beforeend", "<br><br>");
-  let inputDiv = document.createElement("div");
-  document.body.appendChild(inputDiv);
-  inputDiv.insertAdjacentHTML("beforeend", "FSM Input: ");
-  inputContainer = document.createElement("span");
-  inputContainer.classList.add('fsm-input-container');
-  inputDiv.appendChild(inputContainer);
-  if (fsmInput.length === 0) inputContainer_input(); else inputContainer_text();
-
-  execContainer = document.createElement("div");
-  document.body.appendChild(execContainer);
-  exechtml_start();
-
   textarea = document.createElement("textarea");
   document.body.appendChild(textarea);
 
@@ -164,8 +165,7 @@ function registerEvents() {
         } else {
           const isStart = confirm(`Is starting state?`);
           const isAccept = confirm(`Is accepting state?`);
-          const state: IInteractiveState = { label, input: [], conns: [], isStart, isAccept, x: mouseX, y: mouseY };
-          state.output = [];
+          const state: IInteractiveState = { label, input: [], output: [], conns: [], isStart, isAccept, x: mouseX, y: mouseY };
           states.set(label, state);
           doUpdate = true;
           generateFSM();
@@ -204,8 +204,6 @@ function mainLoop() {
   }
   requestAnimationFrame(mainLoop.bind(this));
 }
-
-window.getStates = () => states;
 
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -506,7 +504,7 @@ function inputContainer_text() {
 // Set fsmRunning on or off
 function setFSMRunning(bool: boolean) {
   fsmInputIndex = bool ? 0 : -1;
-  inputContainer_text();
+  if (fsmInput === '') inputContainer_input(); else inputContainer_text();
   fsmRunning = bool;
   activePath = undefined;
   selectedState = undefined;
