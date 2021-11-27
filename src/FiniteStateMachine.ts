@@ -35,6 +35,7 @@ export interface IFSMInstance {
   states: number;
   msg: string;
   history?: string[];
+  pos: number;
 }
 
 export interface IFSMCheck {
@@ -149,9 +150,15 @@ export class FiniteStateMachine {
   public createInstance(input: string, recordHistory = false): IFSMInstance {
     let output = '', states = 0, state = this.getState(this.getStartingState()), history = [state.label], pos = 0, msg = '', done = false;
     const step = () => {
+      if (pos >= input.length) {
+        done = true;
+        msg = "Ran to completion";
+        _update(instance);
+        return false;
+      }
       let next: string; // Label of next state, or undefined
       for (let i = 0; !next && i < state.input.length; ++i) {
-        let substr = input.substr(pos, input.length);
+        let substr = input.substr(pos, state.input[i].length);
         if (pos + state.input[i].length > input.length) continue; // Skip if input too large
         if (substr === state.input[i]) { // Input match!
           next = state.conns[i];
@@ -180,10 +187,11 @@ export class FiniteStateMachine {
       instance.states = states;
       instance.msg = msg;
       instance.done = done;
+      instance.pos = pos;
       if (recordHistory) instance.history = history;
     };
 
-    const instance: IFSMInstance = { step, state: state.label, output, states, msg, done };
+    const instance: IFSMInstance = { step, state: state.label, output, states, msg, done, pos };
     _update(instance);
     return instance;
   }

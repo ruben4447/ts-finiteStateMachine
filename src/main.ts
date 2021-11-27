@@ -1,4 +1,4 @@
-import { FiniteStateMachine, IExecuteReturn, IFSMCheck, IState, Role, ROLE_ACCEPT, ROLE_NONE, ROLE_START } from "./FiniteStateMachine";
+import { FiniteStateMachine, IExecuteReturn, IFSMCheck, IFSMInstance, IState, Role, ROLE_ACCEPT, ROLE_NONE, ROLE_START } from "./FiniteStateMachine";
 import { arrow, downloadBlob, extractCoords, readTextFile } from "./utils";
 
 interface IInteractiveState extends IState {
@@ -18,7 +18,7 @@ var FSM: FiniteStateMachine;
 var pathTable: HTMLTableElement;
 var doUpdate = false;
 var inputContainer: HTMLSpanElement;
-var fsmInput = '100', fsmInputIndex = -1, fsmRunning = false, traceHistory = false;
+var fsmInput = '10101', fsmInputIndex = -1, fsmRunning = false, traceHistory = false;
 var execContainer: HTMLDivElement;
 
 window.getStates = () => states;
@@ -551,6 +551,19 @@ function exechtml_start() {
     }
   });
   execContainer.appendChild(btnExecute);
+  let btnStep = document.createElement("button");
+  btnStep.innerText = 'Step Through';
+  btnStep.addEventListener("click", () => {
+    generateFSM();
+    const result = FSM.check();
+    if (result.code === 0) {
+      setFSMRunning(true);
+      exechtml_stepthrough();
+    } else {
+      alert(`Unable to execute\nFSM check FAILED with code ${result.code}\n>> "${fsmCheckResultToString(result)}"`);
+    }
+  });
+  execContainer.appendChild(btnStep);
   let table = document.createElement("table");
   execContainer.appendChild(table);
 }
@@ -563,6 +576,7 @@ function exechtml_displayexecreturn(obj: {} | IExecuteReturn, table: HTMLTableEl
     tbody.insertAdjacentHTML("beforeend", `<tr><th>Final</th><td>&mdash;</td></tr>`);
     tbody.insertAdjacentHTML("beforeend", `<tr><th>Output</th><td>&mdash;</td></tr>`);
     tbody.insertAdjacentHTML("beforeend", `<tr><th>Message</th><td>&mdash;</td></tr>`);
+    tbody.insertAdjacentHTML("beforeend", `<tr><th>Cycles</th><td>0</td></tr>`);
     if (traceHistory) tbody.insertAdjacentHTML("beforeend", `<tr><th>History</th><td>&mdash;</td></tr>`);
   } else {
     const data = obj as IExecuteReturn;
@@ -570,12 +584,57 @@ function exechtml_displayexecreturn(obj: {} | IExecuteReturn, table: HTMLTableEl
     tbody.insertAdjacentHTML("beforeend", `<tr><th title='Final state of FSM'>Final</th><td>${data.final}</td></tr>`);
     tbody.insertAdjacentHTML("beforeend", `<tr><th title='FSM Output'>Output</th><td><code>"${data.output}"</code></td></tr>`);
     tbody.insertAdjacentHTML("beforeend", `<tr><th title='Message from FSM'>Message</th><td><code>${data.msg}</code></td></tr>`);
+    tbody.insertAdjacentHTML("beforeend", `<tr><th title='How many states were visited'>Cycles</th><td>${data.states}</td></tr>`);
     if (traceHistory) tbody.insertAdjacentHTML("beforeend", `<tr><th title='Traceback history of all states visited'>History</th><td><code>${data.history?.join(',')}</code></td></tr>`);
   }
   const btn = document.createElement("button");
   btn.innerText = 'Close';
   btn.addEventListener("click", () => table.innerHTML = '');
   table.createTFoot().appendChild(btn);
+}
+
+async function exechtml_stepthrough() {
+  execContainer.innerHTML = '';
+  const instance = FSM.createInstance(fsmInput, traceHistory);
+  selectedState = instance.state;
+  doUpdate = true;
+  const btnStep = document.createElement("button");
+  btnStep.innerText = 'Step';
+  btnStep.addEventListener("click", () => {
+    let ok = instance.step();
+    exechtml_displayinstancetable(instance, table);
+    inputContainer_text();
+    if (ok) {
+      fsmInputIndex = instance.pos;
+    } else {
+      btnStep.disabled = true;
+      setFSMRunning(false);
+    }
+    selectedState = instance.state;
+    doUpdate = true;
+  });
+  execContainer.appendChild(btnStep);
+  const btnExit = document.createElement("button");
+  btnExit.innerText = 'Exit';
+  btnExit.addEventListener("click", () => {
+    setFSMRunning(false);
+    exechtml_start();
+  });
+  execContainer.appendChild(btnExit);
+  const table = document.createElement("table");
+  execContainer.appendChild(table);
+  exechtml_displayinstancetable(instance, table);
+}
+
+function exechtml_displayinstancetable(instance: IFSMInstance, table: HTMLTableElement) {
+  table.innerHTML = "";
+  const tbody = table.createTBody();
+  tbody.insertAdjacentHTML("beforeend", `<tr><th>Done</th><td><span class='bool-${instance.done}'>${instance.done}</span></td></tr>`);
+  tbody.insertAdjacentHTML("beforeend", `<tr><th title='State we are currently in'>State</th><td>${instance.state}</td></tr>`);
+  tbody.insertAdjacentHTML("beforeend", `<tr><th title='FSM Output'>Output</th><td><code>"${instance.output}"</code></td></tr>`);
+  tbody.insertAdjacentHTML("beforeend", `<tr><th title='How many states have been visited'>Cycles</th><td>${instance.states}</td></tr>`);
+  tbody.insertAdjacentHTML("beforeend", `<tr><th title='Message from FSM'>Message</th><td><code>${instance.msg}</code></td></tr>`);
+  if (traceHistory) tbody.insertAdjacentHTML("beforeend", `<tr><th title='Traceback history of all states visited so far'>History</th><td><code>${instance.history?.join(',')}</code></td></tr>`);
 }
 
 window.addEventListener('load', main);
