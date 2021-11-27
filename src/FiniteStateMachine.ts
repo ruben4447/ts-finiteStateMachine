@@ -1,8 +1,3 @@
-export const ROLE_NONE = 0;
-export const ROLE_START = 1;
-export const ROLE_ACCEPT = 2;
-export type Role = typeof ROLE_NONE | typeof ROLE_START | typeof ROLE_ACCEPT;
-
 export const VALID_LABEL_REGEX = /[A-Za-z$0-9_]/;
 
 /**
@@ -13,8 +8,9 @@ export const VALID_LABEL_REGEX = /[A-Za-z$0-9_]/;
 export interface IState {
   label: string;
   input: string[];
-  output?: string[];
-  role?: Role;
+  output: string[];
+  isStart?: boolean;
+  isAccept?: boolean;
   conns: string[];
 }
 
@@ -65,7 +61,6 @@ export class FiniteStateMachine {
   /** Add state to this FSM. Return success. */
   public addState(state: IState) {
     if (this.hasState(state.label)) return false;
-    if (state.role === undefined) state.role = ROLE_NONE;
     this._states.set(state.label, state);
     return true;
   }
@@ -80,7 +75,7 @@ export class FiniteStateMachine {
   /** Get label of starting state in FSM */
   public getStartingState() {
     for (const [label, state] of this._states) {
-      if (state.role === ROLE_START) return label;
+      if (state.isStart) return label;
     }
     return undefined;
   }
@@ -97,10 +92,11 @@ export class FiniteStateMachine {
   public check(): IFSMCheck {
     let metStart = false, metAccept = false;
     for (const [label, state] of this._states) {
-      if (state.role === ROLE_START) {
+      if (state.isStart) {
         if (metStart) return { code: 2, state: label };
         metStart = true;
-      } else if (state.role === ROLE_ACCEPT) {
+      }
+      if (state.isAccept) {
         metAccept = true;
       }
       if (state.input.length !== state.conns.length || (state.output && state.input.length !== state.output.length)) return { code: 5, state: label };
@@ -136,8 +132,8 @@ export class FiniteStateMachine {
       }
       state = this.getState(next);
     }
-    if (!error) msg = `Ran to completion`;
-    const obj: IExecuteReturn = { accepted: state.role === ROLE_ACCEPT && !error, final: state.label, output, states, msg };
+    if (!error) msg = "End Of Input";
+    const obj: IExecuteReturn = { accepted: state.isAccept && !error, final: state.label, output, states, msg };
     if (recordHistory) obj.history = history;
     return obj;
   }
@@ -152,7 +148,7 @@ export class FiniteStateMachine {
     const step = () => {
       if (pos >= input.length) {
         done = true;
-        msg = "Ran to completion";
+        msg = "End Of Input";
         _update(instance);
         return false;
       }
@@ -209,20 +205,21 @@ export class FiniteStateMachine {
 
   /** Convert state to a string */
   public static stateToString(state: IState) {
-    return `${state.role === ROLE_START ? '[START] ' : (state.role === ROLE_ACCEPT ? '[ACCEPT] ' : '')}${state.label} :: ${state.input.map((input, i) => state.conns[i] + ': ' + input + (state.output && state.output[i] ? '|' + state.output[i] : '')).join(', ')}`;
+    return `[${state.isStart ? 'START' : ''}${state.isAccept ? 'ACCEPT' : ''}] ${state.label} :: ${state.input.map((input, i) => state.conns[i] + ': ' + input + (state.output && state.output[i] ? '|' + state.output[i] : '')).join(', ')}`;
   }
 
   /** Return State object from string or number if unable to parse (number is last successful position parsed) */
   public static stateFromString(string: string): IState | number {
-    let pos = 0, role: Role = ROLE_NONE;
+    let pos = 0, isStart = false, isAccept = false;
     string.trim();
     if (string[pos] === '[') { // Role
       pos++;
       if (string.substr(pos, 5).toUpperCase() === 'START') {
-        role = ROLE_START;
+        isStart = true;
         pos += 5;
-      } else if (string.substr(pos, 6).toUpperCase() === 'ACCEPT') {
-        role = ROLE_ACCEPT;
+      }
+      if (string.substr(pos, 6).toUpperCase() === 'ACCEPT') {
+        isAccept = true;
         pos += 6;
       }
       if (string[pos] === ']') pos++;
@@ -270,8 +267,7 @@ export class FiniteStateMachine {
       while (/\s/.test(string[pos])) pos++; // Remove whitespace
     }
 
-    const state: IState = { label, role, input: inputs, conns };
-    if (outputs.length !== 0) state.output = outputs;
+    const state: IState = { label, isStart, isAccept, input: inputs, conns, output: outputs };
     return state;
   }
 

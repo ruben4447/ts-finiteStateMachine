@@ -1,0 +1,21 @@
+[STARTACCEPT] C0 :: C0: 00|0, C0: 01|1, C0: 10|1, C1: 11|0;211,254
+[ACCEPT] C1 :: C0: 00|1, C1: 01|0, C1: 10|0, C1: 11|1;491,248
+;-;
+C0->C0:2
+C0->C0:2
+C0->C0:2
+C0->C1:241,194,443,194
+C1->C0:451,305,248,305
+C1->C1:1
+C1->C1:1
+C1->C1:1
+;-;
+Adds two binary numbers together
+Combine two input numbers in binary bit-wise from right to left to form FSM input.
+ If machine ends in C1, append 1 to output
+
+Example:
+Number A: 110100 (52)
+Number B: 010101 (21)
+Combine: 010011001110
+Output: 100100 but ended in C1 so 1001001 (73)

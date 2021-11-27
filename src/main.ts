@@ -1,4 +1,4 @@
-import { FiniteStateMachine, IExecuteReturn, IFSMCheck, IFSMInstance, IState, Role, ROLE_ACCEPT, ROLE_NONE, ROLE_START } from "./FiniteStateMachine";
+import { FiniteStateMachine, IExecuteReturn, IFSMCheck, IFSMInstance, IState } from "./FiniteStateMachine";
 import { arrow, downloadBlob, extractCoords, readTextFile } from "./utils";
 
 interface IInteractiveState extends IState {
@@ -18,10 +18,8 @@ var FSM: FiniteStateMachine;
 var pathTable: HTMLTableElement;
 var doUpdate = false;
 var inputContainer: HTMLSpanElement;
-var fsmInput = '10101', fsmInputIndex = -1, fsmRunning = false, traceHistory = false;
+var fsmInput = '', fsmInputIndex = -1, fsmRunning = false, traceHistory = false;
 var execContainer: HTMLDivElement;
-
-window.getStates = () => states;
 
 function main() {
   canvas = document.createElement('canvas');
@@ -38,11 +36,13 @@ function main() {
   let deleteBtn = document.createElement("button");
   deleteBtn.innerText = "Delete FSM";
   deleteBtn.addEventListener('click', () => {
-    states.clear();
-    paths.clear();
-    doUpdate = true;
-    generateFSM();
-    updateTable();
+    if (confirm("Delete FSM?")) {
+      states.clear();
+      paths.clear();
+      doUpdate = true;
+      generateFSM();
+      updateTable();
+    }
   });
   document.body.appendChild(deleteBtn);
 
@@ -79,15 +79,6 @@ function main() {
   execContainer = document.createElement("div");
   document.body.appendChild(execContainer);
   exechtml_start();
-
-  FSMfromString(`[START] S0 :: S0: 0|0, S1: 1|1;200,300
-[ACCEPT] S1 :: S1: 0|0, S0: 1|1;500,300
-;-;
-S0->S0:-1.5707963267948966
-S0->S1:300,200,400,200
-S1->S1:1.5707963267948966
-S1->S0:350,400
-`);
 
   doUpdate = true;
   mainLoop();
@@ -128,19 +119,16 @@ function registerEvents() {
       const over = getStateOver(mouseX, mouseY);
       if (over) {
         const ptxt = selectedState + '-' + over;
-        if (paths.has(ptxt)) {
-          alert(`Path ${selectedState} to ${over} already exists.`);
-        } else {
+        let inp = prompt(`Input value for connection ${ptxt}`, '0');
+        if (inp !== null) {
           const sstate = states.get(selectedState);
-          paths.set(ptxt, selectedState === over ? Math.random() * 2 * Math.PI : activePath.slice(1, activePath.length - 2));
+          if (!paths.has(ptxt)) paths.set(ptxt, selectedState === over ? Math.random() * 2 * Math.PI : activePath.slice(1, activePath.length - 1));
           sstate.conns.push(over);
-          sstate.input.push(prompt(`Input value for connection ${ptxt}`, '0') ?? '0');
-          if (sstate.output) {
-            sstate.output.push(prompt(`Output value for connection ${ptxt} (input = ${sstate.input[sstate.input.length - 1]})`, '0') ?? '0');
-          }
-          updateTable();
-          generateFSM();
+          sstate.input.push(inp);
+          sstate.output.push(prompt(`Output value for connection ${ptxt} (input = ${sstate.input[sstate.input.length - 1]})`, '0') ?? '0');
         }
+        updateTable();
+        generateFSM();
         activePath = undefined;
         selectedState = undefined;
       }
@@ -170,8 +158,9 @@ function registerEvents() {
         if (states.has(label)) {
           alert("Label already exists");
         } else {
-          const role = +prompt(`Enter role\n${ROLE_NONE}: None; ${ROLE_START}: Start; ${ROLE_ACCEPT}: Accepting`, ROLE_NONE.toString()) as Role;
-          const state: IInteractiveState = { label, input: [], conns: [], role, x: mouseX, y: mouseY };
+          const isStart = confirm(`Is starting state?`);
+          const isAccept = confirm(`Is accepting state?`);
+          const state: IInteractiveState = { label, input: [], conns: [], isStart, isAccept, x: mouseX, y: mouseY };
           state.output = [];
           states.set(label, state);
           doUpdate = true;
@@ -197,6 +186,9 @@ function registerEvents() {
       generateFSM();
     } else if (selectedState && e.key === 's') {
       alert(FiniteStateMachine.stateToString(states.get(selectedState)));
+    } else if (activePath && e.key === 'Escape') {
+      activePath = undefined;
+      doUpdate = true;
     }
   });
 }
@@ -209,6 +201,8 @@ function mainLoop() {
   requestAnimationFrame(mainLoop.bind(this));
 }
 
+window.getStates = () => states;
+
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.textAlign = 'center';
@@ -217,41 +211,54 @@ function render() {
   ctx.strokeStyle = 'black';
   ctx.fillStyle = 'black';
   ctx.font = '11px monospace';
+  const drawnPaths: string[] = [];
   states.forEach(state => {
     for (let i = 0; i < state.conns.length; ++i) {
-      const destination = states.get(state.conns[i]);
-      let textX: number, textY: number;
-      const path = paths.get(`${state.label}-${destination.label}`);
-      if (state === destination) {
-        ctx.beginPath();
-        let r = RADIUS / 2, t = path as unknown as number;
-        const cx = state.x + 2 * r * Math.cos(t);
-        const cy = state.y + 2 * r * Math.sin(t);
-        ctx.arc(cx, cy, r, 0, 2 * Math.PI);
-        ctx.stroke();
-        // arrow(cx, cy, state.x + 2.5 * r * Math.cos(t), state.y + 2.5 * r * Math.sin(t), r / 2);
-        textX = state.x + 3.5 * r * Math.cos(t);
-        textY = state.y + 3.5 * r * Math.sin(t);
-      } else {
-        ctx.beginPath();
-        ctx.moveTo(state.x, state.y);
-        if (path) (path as number[][]).forEach(([x, y]) => {
-          ctx.lineTo(x, y);
+      if (drawnPaths.indexOf(state.label + '-' + state.conns[i]) === -1) {
+        drawnPaths.push(state.label + '-' + state.conns[i]);
+        const destination = states.get(state.conns[i]);
+        let textX: number, textY: number;
+        const path = paths.get(`${state.label}-${destination.label}`);
+        let ins: string[] = [], outs: string[] = [];
+        state.conns.forEach((a_conn, a_i) => {
+          if (a_conn === state.conns[i]) {
+            ins.push(state.input[a_i]);
+            outs.push(state.output[a_i]);
+          }
         });
-        ctx.lineTo(destination.x, destination.y);
-        ctx.stroke();
-        if (!Array.isArray(path) || path.length === 0) {
-          textX = Math.abs(destination.x + state.x) / 2;
-          textY = Math.abs(destination.y + state.y) / 2 - 8;
+        const text = ins.join(',') + (outs.length === 0 ? '' : "|" + outs.join(','));
+
+        if (state === destination) {
+          ctx.beginPath();
+          let r = RADIUS / 2, t = path as unknown as number;
+          const cx = state.x + 2 * r * Math.cos(t);
+          const cy = state.y + 2 * r * Math.sin(t);
+          ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+          ctx.stroke();
+          // arrow(cx, cy, state.x + 2.5 * r * Math.cos(t), state.y + 2.5 * r * Math.sin(t), r / 2);
+          textX = state.x + 3.5 * r * Math.cos(t);
+          textY = state.y + 3.5 * r * Math.sin(t);
         } else {
-          textX = Math.abs(path[0][0] + state.x) / 2;
-          textY = Math.abs(path[0][1] + state.y) / 2 - 8;
+          ctx.beginPath();
+          ctx.moveTo(state.x, state.y);
+          if (path) (path as number[][]).forEach(([x, y]) => {
+            ctx.lineTo(x, y);
+          });
+          ctx.lineTo(destination.x, destination.y);
+          ctx.stroke();
+          const SF = 2 / 3;
+          if (!Array.isArray(path) || path.length === 0) {
+            textX = state.x + (destination.x - state.x) * SF;
+            textY = state.y + (destination.y - state.y) * SF - 6;
+          } else {
+            textX = state.x + (path[0][0] - state.x) * SF;
+            textY = state.y + (path[0][1] - state.y) * SF - 6;
+          }
+          arrow(ctx, state.x, state.y, textX, textY + 6, 5);
         }
-        arrow(ctx, state.x, state.y, textX, textY + 8, 5);
+        ctx.fillStyle = 'black';
+        ctx.fillText(text, textX, textY);
       }
-      ctx.fillStyle = 'black';
-      let text = state.input[i] + (state.output && state.output[i] ? '|' + state.output[i] : '');
-      ctx.fillText(text, textX, textY);
     }
   });
   // DRAW STATES
@@ -264,12 +271,13 @@ function render() {
     ctx.strokeStyle = 'black';
     ctx.arc(state.x, state.y, RADIUS, 0, 2 * Math.PI);
     ctx.stroke();
-    if (state.role === ROLE_ACCEPT) {
+    ctx.fillStyle = "black";
+    if (state.isAccept) {
       ctx.beginPath();
       ctx.arc(state.x, state.y, RADIUS - (RADIUS / 5), 0, 2 * Math.PI);
       ctx.stroke();
-      ctx.fillStyle = 'forestgreen';
-    } else if (state.role === ROLE_START) {
+    }
+    if (state.isStart) {
       ctx.beginPath();
       ctx.strokeStyle = 'black';
       ctx.moveTo(state.x - RADIUS - 20, state.y);
@@ -277,9 +285,6 @@ function render() {
       ctx.stroke();
       ctx.fillStyle = 'black';
       arrow(ctx, state.x - RADIUS - 12, state.y, state.x - RADIUS - 6, state.y, 6);
-      ctx.fillStyle = 'purple';
-    } else {
-      ctx.fillStyle = 'black';
     }
     ctx.fillText(state.label, state.x, state.y);
   });
@@ -382,7 +387,8 @@ function generateFSM() {
   return FSM;
 }
 
-const SEC_SEP = ';-;\n';
+const SEC_SEP_TXT = ';-;\n';
+const SEC_SEP_REG = /;\-;\r?\n/;
 
 function FSMtoString() {
   let s_states = '', s_paths = '';
@@ -392,7 +398,7 @@ function FSMtoString() {
       s_paths += label + "->" + state.conns[i] + ":" + paths.get(label + '-' + state.conns[i]) + "\n";
     }
   }
-  return s_states + SEC_SEP + s_paths;
+  return s_states + SEC_SEP_TXT + s_paths;
 }
 
 // Create FSM from a string
@@ -410,7 +416,7 @@ function FSMfromString(string: string) {
 }
 
 function parseFSMString(string: string) {
-  const strings = string.split(SEC_SEP);
+  const strings = string.split(SEC_SEP_REG);
   const states = new Map<string, IInteractiveState>(), paths = new Map<string, number[][] | number>();
   strings[0].split("\n").forEach(ss => {
     ss = ss.trim();
@@ -439,7 +445,7 @@ function parseFSMString(string: string) {
     if (!states.has(start)) return;
     if (!states.has(end)) return;
     const pstr = start + "-" + end;
-    const nums = path.split(',').map(n => +n);
+    const nums = path.split(',').filter(s => s.length > 0).map(n => +n);
     if (start === end) {
       paths.set(pstr, nums[0]); // Rotation for self
     } else {
