@@ -16,3 +16,26 @@ td {
 table {
   border-collapse: collapse;
 }
+
+input {
+  outline: none;
+}
+
+.fsm-input-container {
+  padding: 3px;
+  background-color: #2f3131;
+  color: lime;
+  letter-spacing: 2px;
+}
+
+.fsm-input-container .curr-index {
+  color: red;
+}
+
+.bool-true {
+  color: forestgreen;
+}
+
+.bool-false {
+  color: crimson;
+}

@@ -1,5 +1,5 @@
-import { FiniteStateMachine, IState, Role, ROLE_ACCEPT, ROLE_NONE, ROLE_START } from "./FiniteStateMachine";
-import { arrow, downloadBlob, extractCoords } from "./utils";
+import { FiniteStateMachine, IExecuteReturn, IFSMCheck, IState, Role, ROLE_ACCEPT, ROLE_NONE, ROLE_START } from "./FiniteStateMachine";
+import { arrow, downloadBlob, extractCoords, readTextFile } from "./utils";
 
 interface IInteractiveState extends IState {
   x: number;
@@ -8,9 +8,7 @@ interface IInteractiveState extends IState {
 
 var canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D;
 var states = new Map<string, IInteractiveState>();
-window.states = states
 var paths = new Map<string, number[][] | number>();
-window.paths = paths;
 const RADIUS = 30;
 var toHighlight: string; // Current state to highlight
 var selectedState: string;
@@ -19,6 +17,11 @@ var mouseX = 0, mouseY = 0;
 var FSM: FiniteStateMachine;
 var pathTable: HTMLTableElement;
 var doUpdate = false;
+var inputContainer: HTMLSpanElement;
+var fsmInput = '100', fsmInputIndex = -1, fsmRunning = false, traceHistory = false;
+var execContainer: HTMLDivElement;
+
+window.getStates = () => states;
 
 function main() {
   canvas = document.createElement('canvas');
@@ -32,23 +35,59 @@ function main() {
   pathTable = document.createElement("table");
   document.body.appendChild(pathTable);
 
+  let deleteBtn = document.createElement("button");
+  deleteBtn.innerText = "Delete FSM";
+  deleteBtn.addEventListener('click', () => {
+    states.clear();
+    paths.clear();
+    doUpdate = true;
+    generateFSM();
+    updateTable();
+  });
+  document.body.appendChild(deleteBtn);
+
   let downloadBtn = document.createElement("button");
   downloadBtn.innerText = "Download FSM";
   downloadBtn.addEventListener('click', () => {
-    downloadBlob(FSM.toString(), 'FSM.txt', 'plain/text');
+    downloadBlob(FSMtoString(), Date.now() + '.fsm.txt', 'plain/text');
   });
   document.body.appendChild(downloadBtn);
 
-  FSM = new FiniteStateMachine();
-  FSM.addStateFromString("[START] S0 :: S0: 0, S1: 1");
-  FSM.addStateFromString("[ACCEPT] S1 :: S1: 0, S0: 1");
+  let uploadBtn = document.createElement("button");
+  uploadBtn.innerText = "Upload FSM";
+  uploadBtn.addEventListener('click', () => inputUpload.click());
+  document.body.appendChild(uploadBtn);
+  const inputUpload = document.createElement("input");
+  inputUpload.type = "file";
+  inputUpload.addEventListener('change', async e => {
+    const file = inputUpload.files[0];
+    if (file) {
+      const text = await readTextFile(file);
+      FSMfromString(text);
+    }
+  });
 
-  states.set("S0", { ...FSM.getState("S0"), x: 200, y: 300 });
-  paths.set("S0-S0", -Math.PI / 2);
-  paths.set("S0-S1", [[350, 200]]);
-  states.set("S1", { ...FSM.getState("S1"), x: 500, y: 300 });
-  paths.set("S1-S0", [[350, 400]]);
-  paths.set("S1-S1", Math.PI / 2);
+  document.body.insertAdjacentHTML("beforeend", "<br><br>");
+  let inputDiv = document.createElement("div");
+  document.body.appendChild(inputDiv);
+  inputDiv.insertAdjacentHTML("beforeend", "FSM Input: ");
+  inputContainer = document.createElement("span");
+  inputContainer.classList.add('fsm-input-container');
+  inputDiv.appendChild(inputContainer);
+  if (fsmInput.length === 0) inputContainer_input(); else inputContainer_text();
+
+  execContainer = document.createElement("div");
+  document.body.appendChild(execContainer);
+  exechtml_start();
+
+  FSMfromString(`[START] S0 :: S0: 0|0, S1: 1|1;200,300
+[ACCEPT] S1 :: S1: 0|0, S0: 1|1;500,300
+;-;
+S0->S0:-1.5707963267948966
+S0->S1:300,200,400,200
+S1->S1:1.5707963267948966
+S1->S0:350,400
+`);
 
   doUpdate = true;
   mainLoop();
@@ -69,6 +108,7 @@ function registerEvents() {
   }
 
   canvas.addEventListener('mousemove', e => {
+    if (fsmRunning) return;
     const [x, y] = extractCoords(e);
     mouseX = x;
     mouseY = y;
@@ -82,6 +122,7 @@ function registerEvents() {
   });
 
   canvas.addEventListener('click', e => {
+    if (fsmRunning) return;
     if (activePath) {
       activePath.push([Math.round(mouseX), Math.round(mouseY)]);
       const over = getStateOver(mouseX, mouseY);
@@ -118,6 +159,7 @@ function registerEvents() {
   });
 
   document.body.addEventListener('keydown', e => {
+    if (fsmRunning) return;
     if (selectedState && e.key === 'c') {
       const state = states.get(selectedState);
       activePath = [[state.x, state.y]];
@@ -128,10 +170,9 @@ function registerEvents() {
         if (states.has(label)) {
           alert("Label already exists");
         } else {
-          const aout = confirm("Map inputs to outputs?");
           const role = +prompt(`Enter role\n${ROLE_NONE}: None; ${ROLE_START}: Start; ${ROLE_ACCEPT}: Accepting`, ROLE_NONE.toString()) as Role;
           const state: IInteractiveState = { label, input: [], conns: [], role, x: mouseX, y: mouseY };
-          if (aout) state.output = [];
+          state.output = [];
           states.set(label, state);
           doUpdate = true;
           generateFSM();
@@ -163,7 +204,7 @@ function registerEvents() {
 function mainLoop() {
   if (doUpdate) {
     render();
-    doUpdate = true;
+    doUpdate = false;
   }
   requestAnimationFrame(mainLoop.bind(this));
 }
@@ -209,7 +250,7 @@ function render() {
         arrow(ctx, state.x, state.y, textX, textY + 8, 5);
       }
       ctx.fillStyle = 'black';
-      let text = state.input[i] + (state.output ? '|' + state.output[i] : '');
+      let text = state.input[i] + (state.output && state.output[i] ? '|' + state.output[i] : '');
       ctx.fillText(text, textX, textY);
     }
   });
@@ -253,6 +294,13 @@ function render() {
     ctx.lineTo(mouseX, mouseY);
     ctx.stroke();
   }
+  if (fsmRunning) {
+    ctx.fillStyle = 'forestgreen';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.font = 'bold 12px Courier New';
+    ctx.fillText('[running]', 2, 2);
+  }
 }
 
 function updateTable() {
@@ -268,7 +316,7 @@ function updateTable() {
       inputInput.type = "text";
       inputInput.value = state.input[i];
       inputInput.addEventListener('change', () => {
-        if (inputInput.value.length == 0) {
+        if (fsmRunning || inputInput.value.length == 0) {
           inputInput.value = state.input[i];
         } else {
           if (/\s/.test(inputInput.value)) {
@@ -280,6 +328,7 @@ function updateTable() {
           }
         }
       });
+      if (fsmRunning) inputInput.disabled = true;
       td.appendChild(inputInput);
       tr.appendChild(td);
       td = document.createElement("td");
@@ -288,18 +337,17 @@ function updateTable() {
         inputOutput.type = "text";
         inputOutput.value = state.output[i];
         inputOutput.addEventListener('change', () => {
-          if (inputOutput.value.length == 0) {
+          if (fsmRunning) {
+            inputOutput.value = state.output[i];
+          } else if (/\s/.test(inputOutput.value)) {
+            alert("Cannot contain whitespace");
             inputOutput.value = state.output[i];
           } else {
-            if (/\s/.test(inputOutput.value)) {
-              alert("Cannot contain whitespace");
-              inputOutput.value = state.output[i];
-            } else {
-              state.output[i] = inputOutput.value;
-              doUpdate = true;
-            }
+            state.output[i] = inputOutput.value;
+            doUpdate = true;
           }
         });
+        if (fsmRunning) inputOutput.disabled = true;
         td.appendChild(inputOutput);
       } else {
         td.insertAdjacentHTML("beforeend", "<em title='Output must be enabled when state is created'>N/A</em>");
@@ -309,12 +357,16 @@ function updateTable() {
       let btnDel = document.createElement("button");
       btnDel.innerText = 'Del';
       btnDel.addEventListener('click', () => {
+        if (fsmRunning) return;
         paths.delete(label + '-' + conn);
         state.conns.splice(i, 1);
+        state.input.splice(i, 1);
+        state.output.splice(i, 1);
         updateTable();
         generateFSM();
         doUpdate = true;
       });
+      if (fsmRunning) btnDel.disabled = true;
       td.appendChild(btnDel);
       tr.appendChild(td);
       tbody.appendChild(tr);
@@ -327,8 +379,203 @@ function generateFSM() {
   for (const [label, state] of states) {
     FSM.addState(state);
   }
-  window.FSM = FSM;
   return FSM;
+}
+
+const SEC_SEP = ';-;\n';
+
+function FSMtoString() {
+  let s_states = '', s_paths = '';
+  for (const [label, state] of states) {
+    s_states += FiniteStateMachine.stateToString(state) + ";" + state.x + "," + state.y + "\n";
+    for (let i = 0; i < state.conns.length; ++i) {
+      s_paths += label + "->" + state.conns[i] + ":" + paths.get(label + '-' + state.conns[i]) + "\n";
+    }
+  }
+  return s_states + SEC_SEP + s_paths;
+}
+
+// Create FSM from a string
+function FSMfromString(string: string) {
+  const data = parseFSMString(string);
+  states = data.states;
+  paths = data.paths;
+  fixPaths();
+  activePath = undefined;
+  selectedState = undefined;
+  toHighlight = undefined;
+  doUpdate = true;
+  updateTable();
+  generateFSM();
+}
+
+function parseFSMString(string: string) {
+  const strings = string.split(SEC_SEP);
+  const states = new Map<string, IInteractiveState>(), paths = new Map<string, number[][] | number>();
+  strings[0].split("\n").forEach(ss => {
+    ss = ss.trim();
+    if (ss.length === 0) return;
+    let [stateInfo, pos] = ss.split(';');
+    const v = FiniteStateMachine.stateFromString(stateInfo.trim());
+    if (typeof v === 'object') {
+      let x: number, y: number;
+      if (pos) {
+        const coords = pos.split(',').map(n => parseFloat(n));
+        x = coords[0];
+        y = coords[1];
+      } else {
+        x = Math.random() * canvas.width;
+        y = Math.random() * canvas.height;
+      }
+      const istate: IInteractiveState = { ...v, x, y };
+      states.set(istate.label, istate);
+    }
+  });
+  strings[1]?.split("\n").forEach(s => {
+    s = s.trim();
+    if (s.length === 0) return;
+    const [meta, path] = s.split(':');
+    const [start, end] = meta.split('->');
+    if (!states.has(start)) return;
+    if (!states.has(end)) return;
+    const pstr = start + "-" + end;
+    const nums = path.split(',').map(n => +n);
+    if (start === end) {
+      paths.set(pstr, nums[0]); // Rotation for self
+    } else {
+      const coords = nums.reduce<number[][]>((rows, key, index) => (index % 2 == 0 ? rows.push([key]) : rows[rows.length - 1].push(key)) && rows, []);
+      paths.set(pstr, coords);
+    }
+  });
+  return { states, paths };
+}
+
+/** Fix connection in paths */
+function fixPaths() {
+  states.forEach((state, label) => {
+    state.conns.forEach((conn, i) => {
+      const str = label + '-' + conn;
+      if (!paths.has(str)) {
+        if (conn === label) {
+          paths.set(str, Math.random() * 2 * Math.PI);
+        } else {
+          paths.set(str, []);
+        }
+      }
+    });
+  });
+}
+
+// Populate inputContainer with <input />
+function inputContainer_input(focus = false) {
+  inputContainer.innerHTML = '';
+  let input = document.createElement('input');
+  input.type = "text";
+  input.value = fsmInput;
+  input.addEventListener('change', () => fsmInput = input.value);
+  input.addEventListener('blur', () => fsmInput.length !== 0 && inputContainer_text());
+  inputContainer.appendChild(input);
+  if (focus) input.focus();
+}
+
+// Populate inputContainer with display div
+function inputContainer_text() {
+  inputContainer.innerHTML = '';
+  let code = document.createElement('code');
+  if (fsmInputIndex > -1) {
+    code.innerHTML = fsmInput.substring(0, fsmInputIndex) + "<span class='curr-index'>" + fsmInput[fsmInputIndex] + "</span>" + fsmInput.substr(fsmInputIndex + 1);
+  } else {
+    code.innerText = fsmInput;
+  }
+  code.addEventListener("click", () => !fsmRunning && inputContainer_input(true));
+  inputContainer.appendChild(code);
+}
+
+// Set fsmRunning on or off
+function setFSMRunning(bool: boolean) {
+  fsmInputIndex = bool ? 0 : -1;
+  inputContainer_text();
+  fsmRunning = bool;
+  activePath = undefined;
+  selectedState = undefined;
+  doUpdate = true;
+  updateTable();
+}
+
+// Result from <FSM>.check() - return message
+function fsmCheckResultToString(check: IFSMCheck) {
+  switch (check.code) {
+    case 0:
+      return "OK";
+    case 1:
+      return "No startng state found";
+    case 2:
+      return `More than one starting state found (${check.state})`;
+    case 3:
+      return "No accepting state";
+    case 4:
+      return `State ${check.state}: unknown connecting state ${check.conn}`;
+    case 5:
+      return `State ${check.state}: unblanaced inputs/outputs/conns`;
+    default:
+      return "Unknown";
+  }
+}
+
+// execContainer: provide user with options
+function exechtml_start() {
+  execContainer.innerHTML = 'Trace History: ';
+  let traceHistoryInput = document.createElement("input");
+  traceHistoryInput.type = "checkbox";
+  traceHistoryInput.checked = traceHistory;
+  traceHistoryInput.addEventListener("change", () => traceHistory = traceHistoryInput.checked);
+  execContainer.appendChild(traceHistoryInput);
+  let btnExecute = document.createElement("button");
+  btnExecute.innerText = 'Execute';
+  btnExecute.addEventListener('click', () => {
+    generateFSM();
+    const result = FSM.check();
+    if (result.code === 0) {
+      setFSMRunning(true);
+      btnExecute.disabled = true;
+      traceHistoryInput.disabled = true;
+      exechtml_displayexecreturn({}, table);
+      const data = FSM.execute(fsmInput, traceHistory);
+      exechtml_displayexecreturn(data, table);
+      setFSMRunning(false);
+      selectedState = data.final;
+      btnExecute.disabled = false;
+      traceHistoryInput.disabled = false;
+    } else {
+      alert(`Unable to execute\nFSM check FAILED with code ${result.code}\n>> "${fsmCheckResultToString(result)}"`);
+    }
+  });
+  execContainer.appendChild(btnExecute);
+  let table = document.createElement("table");
+  execContainer.appendChild(table);
+}
+
+function exechtml_displayexecreturn(obj: {} | IExecuteReturn, table: HTMLTableElement) {
+  table.innerHTML = '';
+  const tbody = table.createTBody();
+  if (Object.keys(obj).length === 0) {
+    tbody.insertAdjacentHTML("beforeend", `<tr><th>Accepted</th><td>&mdash;</td></tr>`);
+    tbody.insertAdjacentHTML("beforeend", `<tr><th>Final</th><td>&mdash;</td></tr>`);
+    tbody.insertAdjacentHTML("beforeend", `<tr><th>Output</th><td>&mdash;</td></tr>`);
+    tbody.insertAdjacentHTML("beforeend", `<tr><th>Message</th><td>&mdash;</td></tr>`);
+    if (traceHistory) tbody.insertAdjacentHTML("beforeend", `<tr><th>History</th><td>&mdash;</td></tr>`);
+  } else {
+    const data = obj as IExecuteReturn;
+    tbody.insertAdjacentHTML("beforeend", `<tr><th title='Is FSM in an accepting state'>Accepted</th><td><span class='bool-${data.accepted}'>${data.accepted}</span></td></tr>`);
+    tbody.insertAdjacentHTML("beforeend", `<tr><th title='Final state of FSM'>Final</th><td>${data.final}</td></tr>`);
+    tbody.insertAdjacentHTML("beforeend", `<tr><th title='FSM Output'>Output</th><td><code>"${data.output}"</code></td></tr>`);
+    tbody.insertAdjacentHTML("beforeend", `<tr><th title='Message from FSM'>Message</th><td><code>${data.msg}</code></td></tr>`);
+    if (traceHistory) tbody.insertAdjacentHTML("beforeend", `<tr><th title='Traceback history of all states visited'>History</th><td><code>${data.history?.join(',')}</code></td></tr>`);
+  }
+  const btn = document.createElement("button");
+  btn.innerText = 'Close';
+  btn.addEventListener("click", () => table.innerHTML = '');
+  table.createTFoot().appendChild(btn);
 }
 
 window.addEventListener('load', main);

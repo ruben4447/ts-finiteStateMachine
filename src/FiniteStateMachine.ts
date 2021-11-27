@@ -18,7 +18,7 @@ export interface IState {
   conns: string[];
 }
 
-interface IExecuteReturn {
+export interface IExecuteReturn {
   accepted: boolean;
   final: string;
   history?: string[];
@@ -27,7 +27,7 @@ interface IExecuteReturn {
   msg: string;
 }
 
-interface IFSMInstance {
+export interface IFSMInstance {
   done: boolean;
   step: () => boolean;
   state: string;
@@ -35,6 +35,12 @@ interface IFSMInstance {
   states: number;
   msg: string;
   history?: string[];
+}
+
+export interface IFSMCheck {
+  code: number;
+  state?: string;
+  conn?: string
 }
 
 export class FiniteStateMachine {
@@ -86,9 +92,8 @@ export class FiniteStateMachine {
    * 3 -> No accepting state
    * 4 -> Unknown connection. Provides { state, conn }
    * 5 -> Unbalanced input/output/conns. Provides { state }
-   * 6 -> State takes no inputs
    */
-  public check(): { code: number, state?: string, conn?: string } {
+  public check(): IFSMCheck {
     let metStart = false, metAccept = false;
     for (const [label, state] of this._states) {
       if (state.role === ROLE_START) {
@@ -98,7 +103,6 @@ export class FiniteStateMachine {
         metAccept = true;
       }
       if (state.input.length !== state.conns.length || (state.output && state.input.length !== state.output.length)) return { code: 5, state: label };
-      if (state.input.length === 0) return { code: 6, state: label };
       for (const conn of state.conns) {
         if (!this.hasState(conn)) return { code: 4, state: label, conn };
       }
@@ -110,27 +114,29 @@ export class FiniteStateMachine {
 
   /** Execute FSM against some input. Populate traceback history? */
   public execute(input: string, recordHistory = false): IExecuteReturn {
-    let output = '', states = 0, state = this.getState(this.getStartingState()), history = [state.label], pos = 0, msg = '';
+    let output = '', states = 0, state = this.getState(this.getStartingState()), history = [state.label], pos = 0, msg = '', error = false;
     while (pos < input.length) {
       let next: string; // Label of next state, or undefined
       for (let i = 0; !next && i < state.input.length; ++i) {
-        let substr = input.substr(pos, input.length);
+        let substr = input.substr(pos, state.input[i].length);
         if (pos + state.input[i].length > input.length) continue; // Skip if input too large
         if (substr === state.input[i]) { // Input match!
           next = state.conns[i];
-          if (state.output) output += state.output[i];
+          if (state.output && state.output[i]) output += state.output[i];
           if (recordHistory) history.push(next);
           states++;
           pos += state.input[i].length;
         }
       }
       if (!next) { // No matches :(
-        msg = `No inputs from string "${input.substr(pos)}" matching [${state.input.map(s => `"${s}"`).join(',')}]`;
+        msg = `${state.label}: Input "${input.substr(pos)}" does not match one of [${state.input.map(s => `"${s}"`).join(',')}]`;
+        error = true;
         break;
       }
       state = this.getState(next);
     }
-    const obj: IExecuteReturn = { accepted: state.role === ROLE_ACCEPT, final: state.label, output, states, msg };
+    if (!error) msg = `Ran to completion`;
+    const obj: IExecuteReturn = { accepted: state.role === ROLE_ACCEPT && !error, final: state.label, output, states, msg };
     if (recordHistory) obj.history = history;
     return obj;
   }
@@ -195,7 +201,7 @@ export class FiniteStateMachine {
 
   /** Convert state to a string */
   public static stateToString(state: IState) {
-    return `${state.role === ROLE_START ? '[START] ' : (state.role === ROLE_ACCEPT ? '[ACCEPT] ' : '')}${state.label} :: ${state.input.map((input, i) => state.conns[i] + ': ' + input + (state.output ? '|' + state.output[i] : '')).join(', ')}`;
+    return `${state.role === ROLE_START ? '[START] ' : (state.role === ROLE_ACCEPT ? '[ACCEPT] ' : '')}${state.label} :: ${state.input.map((input, i) => state.conns[i] + ': ' + input + (state.output && state.output[i] ? '|' + state.output[i] : '')).join(', ')}`;
   }
 
   /** Return State object from string or number if unable to parse (number is last successful position parsed) */
@@ -236,20 +242,20 @@ export class FiniteStateMachine {
 
       let input = '';
       while (/\s/.test(string[pos])) pos++; // Remove whitespace
-      while (string[pos] && !/[\s,]/.test(string[pos])) input += string[pos++];
+      while (string[pos] && !/[\s,\|]/.test(string[pos])) input += string[pos++];
       if (input.length === 0) return pos;
       while (/\s/.test(string[pos])) pos++; // Remove whitespace
       inputs.push(input);
 
+      let output = '';
       if (string[pos] === '|') { // Output!
-        if (inputs.length !== 0 && outputs.length === 0) return pos; // Must jave output for all!
-        let output = '';
+        pos++;
         while (/\s/.test(string[pos])) pos++; // Remove whitespace
         while (string[pos] && !/[\s,]/.test(string[pos])) output += string[pos++];
         if (output.length === 0) return pos;
         while (/\s/.test(string[pos])) pos++; // Remove whitespace
-        outputs.push(output);
       }
+      outputs.push(output);
 
       if (string[pos] !== ',') break; // If no comma, assume end
       pos++;
